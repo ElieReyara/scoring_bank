@@ -2,65 +2,109 @@ import streamlit as st
 import pandas as pd
 import joblib
 
-# Chargement des artefacts du modèle
 model = joblib.load('credit_model.pkl')
 scaler = joblib.load('scaler.pkl')
 model_columns = joblib.load('model_columns.pkl')
 
-st.set_page_config(page_title="Credit Scoring App", page_icon="💳")
-st.title("💳 Évaluation de Solvabilité Crédit")
-st.caption("Modèle de scoring basé sur German Credit Data (UCI) — LogisticRegression, recall optimisé sur défauts")
+st.set_page_config(page_title="CréditScore — Aide à la décision", page_icon="💳")
+st.title("💳 CréditScore")
+st.caption("Outil d'aide à la décision pour l'octroi de crédit — modèle prédictif basé sur l'historique de solvabilité")
 
 st.divider()
+
+# Taux de conversion approximatif DM -> XOF pour adapter le dataset historique au contexte local
+DM_TO_XOF = 350
 
 col1, col2 = st.columns(2)
 
 with col1:
-    checking = st.selectbox("Statut compte courant", 
-        ["Aucun compte", "< 0 DM", "0-200 DM", ">= 200 DM"])
-    duration = st.slider("Durée du crédit (mois)", 4, 72, 24)
-    credit_history = st.selectbox("Historique de crédit",
+    checking = st.selectbox(
+        "Statut du compte courant",
+        ["Aucun compte", "Solde négatif", "Solde entre 0 et 130 000 F", "Solde supérieur à 130 000 F"],
+        help="Situation actuelle du compte bancaire principal du client au moment de la demande."
+    )
+    duration = st.slider(
+        "Durée du crédit (mois)", 4, 72, 24,
+        help="Durée totale sur laquelle le crédit sera remboursé, exprimée en mois."
+    )
+    credit_history = st.selectbox(
+        "Historique de crédit",
         ["Aucun crédit / tous remboursés", "Crédits remboursés à temps",
-         "Retards passés", "Crédit en cours ailleurs", "Crédit critique / retards"])
-    purpose = st.selectbox("Objet du crédit",
-        ["Voiture neuve", "Voiture occasion", "Meubles", "Radio/TV",
-         "Électroménager", "Réparations", "Éducation", "Business", "Autre"])
-    credit_amount = st.number_input("Montant du crédit (DM)", 250, 20000, 3000)
-    savings = st.selectbox("Épargne",
-        ["Aucune épargne", "< 100 DM", "100-500 DM", "500-1000 DM", ">= 1000 DM"])
+         "Retards passés", "Crédit en cours ailleurs", "Crédit critique / retards"],
+        help="Comportement de remboursement observé sur les crédits précédents du client."
+    )
+    purpose = st.selectbox(
+        "Objet du crédit",
+        ["Voiture neuve", "Voiture occasion", "Meubles", "Équipement audio/vidéo",
+         "Électroménager", "Réparations", "Éducation", "Business", "Autre"],
+        help="Usage prévu des fonds empruntés."
+    )
+    credit_amount = st.number_input(
+        "Montant du crédit (F CFA)", 
+        min_value=int(250 * DM_TO_XOF), 
+        max_value=int(20000 * DM_TO_XOF), 
+        value=int(3000 * DM_TO_XOF), 
+        step=5000,
+        help="Montant total demandé par le client."
+    )
+    savings = st.selectbox(
+        "Épargne disponible",
+        ["Aucune épargne", "Moins de 35 000 F", "Entre 35 000 et 175 000 F",
+         "Entre 175 000 et 350 000 F", "Plus de 350 000 F"],
+        help="Montant approximatif d'épargne détenue par le client, hors compte courant."
+    )
 
 with col2:
-    employment = st.selectbox("Ancienneté emploi",
-        ["Sans emploi", "< 1 an", "1-4 ans", "4-7 ans", ">= 7 ans"])
-    age = st.slider("Âge", 18, 75, 35)
-    housing = st.selectbox("Logement", ["Location", "Propriétaire", "Gratuit"])
-    job = st.selectbox("Type d'emploi",
-        ["Sans emploi / non qualifié", "Employé qualifié", "Cadre / indépendant qualifié"])
-    installment_rate = st.slider("Taux de mensualité (% du revenu)", 1, 4, 2)
-    existing_credits = st.slider("Nombre de crédits en cours", 1, 4, 1)
+    employment = st.selectbox(
+        "Ancienneté dans l'emploi actuel",
+        ["Sans emploi", "Moins d'1 an", "Entre 1 et 4 ans", "Entre 4 et 7 ans", "7 ans ou plus"],
+        help="Stabilité professionnelle : durée depuis laquelle le client occupe son poste actuel."
+    )
+    age = st.slider(
+        "Âge du client", 18, 75, 35,
+        help="Âge du demandeur au moment de la demande de crédit."
+    )
+    housing = st.selectbox(
+        "Situation de logement",
+        ["Locataire", "Propriétaire", "Logé gratuitement"],
+        help="Statut résidentiel actuel du client."
+    )
+    job = st.selectbox(
+        "Catégorie professionnelle",
+        ["Sans emploi / non qualifié", "Employé qualifié", "Cadre / indépendant qualifié"],
+        help="Niveau de qualification du poste occupé, indicateur de stabilité de revenu."
+    )
+    installment_rate = st.slider(
+        "Taux de mensualité (% du revenu)", 1, 4, 2,
+        help="Part approximative du revenu mensuel consacrée au remboursement de ce crédit."
+    )
+    existing_credits = st.slider(
+        "Nombre de crédits déjà en cours", 1, 4, 1,
+        help="Nombre total de crédits actifs détenus par le client, celui-ci inclus."
+    )
 
 st.divider()
 
-# Mapping vers les codes originaux du dataset (nécessaires pour matcher l'encodage du modèle)
-map_checking = {"Aucun compte": "A14", "< 0 DM": "A11", "0-200 DM": "A12", ">= 200 DM": "A13"}
+map_checking = {"Aucun compte": "A14", "Solde négatif": "A11", 
+                 "Solde entre 0 et 130 000 F": "A12", "Solde supérieur à 130 000 F": "A13"}
 map_history = {"Aucun crédit / tous remboursés": "A30", "Crédits remboursés à temps": "A31",
                "Retards passés": "A32", "Crédit en cours ailleurs": "A33", "Crédit critique / retards": "A34"}
-map_purpose = {"Voiture neuve": "A40", "Voiture occasion": "A41", "Meubles": "A42", "Radio/TV": "A43",
+map_purpose = {"Voiture neuve": "A40", "Voiture occasion": "A41", "Meubles": "A42", "Équipement audio/vidéo": "A43",
                "Électroménager": "A44", "Réparations": "A45", "Éducation": "A46", "Business": "A49", "Autre": "A410"}
-map_savings = {"Aucune épargne": "A65", "< 100 DM": "A61", "100-500 DM": "A62",
-               "500-1000 DM": "A63", ">= 1000 DM": "A64"}
-map_employment = {"Sans emploi": "A71", "< 1 an": "A72", "1-4 ans": "A73", "4-7 ans": "A74", ">= 7 ans": "A75"}
-map_housing = {"Location": "A151", "Propriétaire": "A152", "Gratuit": "A153"}
+map_savings = {"Aucune épargne": "A65", "Moins de 35 000 F": "A61", "Entre 35 000 et 175 000 F": "A62",
+               "Entre 175 000 et 350 000 F": "A63", "Plus de 350 000 F": "A64"}
+map_employment = {"Sans emploi": "A71", "Moins d'1 an": "A72", "Entre 1 et 4 ans": "A73", 
+                   "Entre 4 et 7 ans": "A74", "7 ans ou plus": "A75"}
+map_housing = {"Locataire": "A151", "Propriétaire": "A152", "Logé gratuitement": "A153"}
 map_job = {"Sans emploi / non qualifié": "A171", "Employé qualifié": "A173", "Cadre / indépendant qualifié": "A174"}
 
 if st.button("🔍 Évaluer la demande", use_container_width=True):
-    # Construction de la ligne avec valeurs par défaut raisonnables pour les colonnes non exposées au formulaire
     input_data = {
         'checking_account_status': map_checking[checking],
         'duration_months': duration,
         'credit_history': map_history[credit_history],
         'purpose': map_purpose[purpose],
-        'credit_amount': credit_amount,
+        'credit_amount': credit_amount / DM_TO_XOF,  # reconversion vers l'échelle d'entraînement du modèle
         'savings_account': map_savings[savings],
         'employment_since': map_employment[employment],
         'installment_rate': installment_rate,
@@ -98,4 +142,4 @@ if st.button("🔍 Évaluer la demande", use_container_width=True):
         st.error(f"❌ Profil à risque élevé — {proba_ok:.0%} de probabilité de remboursement")
         st.write("Le profil présente des indicateurs de risque significatifs de défaut de paiement.")
 
-    st.caption("⚠️ Outil de démonstration à but pédagogique — ne constitue pas une décision de crédit réelle.")
+    st.caption("⚠️ Outil de démonstration à but pédagogique, basé sur des données historiques (German Credit / UCI) adaptées au contexte local. Ne constitue pas une décision de crédit réelle.")
